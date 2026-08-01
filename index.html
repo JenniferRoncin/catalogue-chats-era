@@ -476,33 +476,6 @@ input,textarea,select{font-family:inherit;}
     </div>
   </div>
 
-  <!-- CONNEXION -->
-  <div class="screen" id="screen-signin">
-    <div class="signin-screen">
-      <div class="signin-content">
-        <div class="signin-logo">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c-3.5 0-7 2.3-7 5.2C5 20.7 6.5 22 8.2 22c1.2 0 1.8-.5 3.8-.5s2.6.5 3.8.5c1.7 0 3.2-1.3 3.2-2.8 0-2.9-3.5-5.2-7-5.2z"/><ellipse cx="5.5" cy="9" rx="2" ry="2.6"/><ellipse cx="9" cy="5.5" rx="2" ry="2.6"/><ellipse cx="15" cy="5.5" rx="2" ry="2.6"/><ellipse cx="18.5" cy="9" rx="2" ry="2.6"/></svg>
-        </div>
-        <h1>Catalogue des chats</h1>
-        <p>Connectez-vous pour consulter et gérer les chats à l'adoption, au refuge comme en famille d'accueil.</p>
-        <div class="signin-form">
-          <div class="form-group" id="group-name">
-            <label>Votre nom <span class="req">*</span></label>
-            <input class="text-input" id="input-name" placeholder="ex. Marion Keller" autocomplete="name">
-            <p class="field-error">Veuillez indiquer votre nom.</p>
-          </div>
-          <div class="form-group" id="group-email">
-            <label>Email <span class="req">*</span></label>
-            <input class="text-input" id="input-email" type="email" placeholder="vous@association.org" autocomplete="email">
-            <p class="field-error">Veuillez indiquer un email valide.</p>
-          </div>
-          <button class="btn btn-primary" style="width:100%" onclick="signIn()">Se connecter</button>
-        </div>
-        <p class="signin-note">Cette démo utilise une identification simple pour reconnaître les bénévoles. Une version en production (par ex. dans Glide) utiliserait une authentification par email vérifiée.</p>
-      </div>
-    </div>
-  </div>
-
   <!-- CATALOGUE -->
   <div class="screen" id="screen-catalog">
     <div class="topbar">
@@ -516,10 +489,6 @@ input,textarea,select{font-family:inherit;}
         </div>
       </div>
       <div class="spacer"></div>
-      <div class="volunteer-chip">
-        <span id="volunteerNameLabel">Bénévole</span>
-        <div class="avatar" id="volunteerAvatar">–</div>
-      </div>
     </div>
     <div class="filters" id="filterBar">
       <button class="filter-chip active" data-filter="all" onclick="setFilter('all')">Tous</button>
@@ -705,40 +674,11 @@ async function init(){
     goTo('setup');
     return;
   }
-  try{
-    const raw = localStorage.getItem('volunteer-profile');
-    if(raw) volunteer = JSON.parse(raw);
-  }catch(e){ volunteer = null; }
-
-  if(volunteer && volunteer.name){
-    document.getElementById('input-name').value = volunteer.name;
-    document.getElementById('input-email').value = volunteer.email || '';
-    await enterApp();
-  }else{
-    goTo('signin');
-  }
-}
-
-/* ---------------- Connexion ---------------- */
-async function signIn(){
-  const name = document.getElementById('input-name').value.trim();
-  const email = document.getElementById('input-email').value.trim();
-  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-
-  document.getElementById('group-name').classList.toggle('error', !name);
-  document.getElementById('group-email').classList.toggle('error', !emailOk);
-  if(!name || !emailOk) return;
-
-  volunteer = {name, email};
-  try{
-    localStorage.setItem('volunteer-profile', JSON.stringify(volunteer));
-  }catch(e){ /* on continue même si l'enregistrement échoue */ }
+  volunteer = {name: 'Bénévole', email: ''};
   await enterApp();
 }
 
 async function enterApp(){
-  document.getElementById('volunteerNameLabel').textContent = volunteer.name.split(' ')[0];
-  document.getElementById('volunteerAvatar').textContent = volunteer.name.trim()[0].toUpperCase();
   await loadCats();
   await seedTestDataIfNeeded();
   goTo('catalog');
