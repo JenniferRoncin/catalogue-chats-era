@@ -439,12 +439,45 @@ input,textarea,select{font-family:inherit;}
 }
 </style>
 </head>
+<!-- Firebase (gratuit) : remplace les valeurs ci-dessous par celles de TON projet Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyADqpVLiKI2X6rttdNpkgwsW8Q3JzY7W9k",
+    authDomain: "era-catalogue-des-chats.firebaseapp.com",
+    projectId: "era-catalogue-des-chats",
+    storageBucket: "era-catalogue-des-chats.firebasestorage.app",
+    messagingSenderId: "749930655438",
+    appId: "1:749930655438:web:012de6ca5cbede63292a9f"
+  };
+  const FIREBASE_CONFIGURED = firebaseConfig.apiKey !== "REMPLACE_MOI";
+  let db = null;
+  if(FIREBASE_CONFIGURED){
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+  }
+</script>
 <body>
 
 <div class="app-shell" id="appShell">
 
+  <!-- CONFIGURATION MANQUANTE -->
+  <div class="screen active" id="screen-setup">
+    <div class="signin-screen">
+      <div class="signin-content">
+        <div class="signin-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+        </div>
+        <h1>Configuration Firebase requise</h1>
+        <p>Ce fichier a besoin des identifiants de ton projet Firebase (gratuit) pour stocker les chats en ligne. Ouvre le fichier HTML dans un éditeur de texte et remplace les 6 valeurs "REMPLACE_MOI" en haut du fichier par la configuration de ton projet Firebase (Paramètres du projet → Vos applications → SDK config).</p>
+        <p class="signin-note">Une fois fait, recharge cette page.</p>
+      </div>
+    </div>
+  </div>
+
   <!-- CONNEXION -->
-  <div class="screen active" id="screen-signin">
+  <div class="screen" id="screen-signin">
     <div class="signin-screen">
       <div class="signin-content">
         <div class="signin-logo">
@@ -668,17 +701,21 @@ const ERA_IMPORT_FLAG = 'era-import-v1';
 /* ---------------- Initialisation ---------------- */
 init();
 async function init(){
+  if(!FIREBASE_CONFIGURED){
+    goTo('setup');
+    return;
+  }
   try{
-    const res = await window.storage.get('volunteer-profile', false);
-    if(res && res.value){
-      volunteer = JSON.parse(res.value);
-    }
+    const raw = localStorage.getItem('volunteer-profile');
+    if(raw) volunteer = JSON.parse(raw);
   }catch(e){ volunteer = null; }
 
   if(volunteer && volunteer.name){
     document.getElementById('input-name').value = volunteer.name;
     document.getElementById('input-email').value = volunteer.email || '';
     await enterApp();
+  }else{
+    goTo('signin');
   }
 }
 
@@ -694,7 +731,7 @@ async function signIn(){
 
   volunteer = {name, email};
   try{
-    await window.storage.set('volunteer-profile', JSON.stringify(volunteer), false);
+    localStorage.setItem('volunteer-profile', JSON.stringify(volunteer));
   }catch(e){ /* on continue même si l'enregistrement échoue */ }
   await enterApp();
 }
@@ -712,21 +749,20 @@ async function seedTestDataIfNeeded(){
   if(!ERA_IMPORT || ERA_IMPORT.length === 0) return;
   let alreadyDone = false;
   try{
-    const res = await window.storage.get(ERA_IMPORT_FLAG, true);
-    alreadyDone = !!(res && res.value);
+    const flagDoc = await db.collection('meta').doc(ERA_IMPORT_FLAG).get();
+    alreadyDone = flagDoc.exists && !!flagDoc.data().done;
   }catch(e){ alreadyDone = false; }
   if(alreadyDone) return;
 
   const newOnes = ERA_IMPORT.filter(c => !cats.some(existing => existing.id === c.id));
-  if(newOnes.length === 0){
-    try{ await window.storage.set(ERA_IMPORT_FLAG, 'done', true); }catch(e){}
-    return;
-  }
+  try{
+    const batch = db.batch();
+    newOnes.forEach(c => batch.set(db.collection('cats').doc(c.id), c));
+    batch.set(db.collection('meta').doc(ERA_IMPORT_FLAG), {done: true});
+    await batch.commit();
+  }catch(e){ return; }
 
   cats = [...newOnes, ...cats];
-  const ok = await persistCats();
-  if(!ok) return;
-  try{ await window.storage.set(ERA_IMPORT_FLAG, 'done', true); }catch(e){}
   renderCatalog();
 }
 
@@ -734,22 +770,12 @@ async function seedTestDataIfNeeded(){
 async function loadCats(){
   document.getElementById('catCountLabel').textContent = 'Chargement…';
   try{
-    const res = await window.storage.get('cats-data', true);
-    cats = res && res.value ? JSON.parse(res.value) : [];
+    const snap = await db.collection('cats').get();
+    cats = snap.docs.map(d => d.data());
   }catch(e){
     cats = [];
   }
   renderCatalog();
-}
-
-async function persistCats(){
-  try{
-    await window.storage.set('cats-data', JSON.stringify(cats), true);
-    return true;
-  }catch(e){
-    showToast("Échec de l'enregistrement — vérifiez votre connexion");
-    return false;
-  }
 }
 
 /* ---------------- Navigation ---------------- */
@@ -942,13 +968,16 @@ async function removeCat(id){
   const cat = cats.find(c => c.id === id);
   if(!cat) return;
   if(!confirm(`Retirer ${cat.Name} du catalogue ? Cette action est irréversible.`)) return;
-  cats = cats.filter(c => c.id !== id);
-  const ok = await persistCats();
-  if(ok){
-    renderCatalog();
-    goTo('catalog');
-    showToast(cat.Name + ' retiré du catalogue');
+  try{
+    await db.collection('cats').doc(id).delete();
+  }catch(e){
+    showToast("Échec de l'enregistrement — vérifiez votre connexion");
+    return;
   }
+  cats = cats.filter(c => c.id !== id);
+  renderCatalog();
+  goTo('catalog');
+  showToast(cat.Name + ' retiré du catalogue');
 }
 
 /* ---------------- Formulaire ---------------- */
@@ -1076,14 +1105,18 @@ async function saveForm(){
     addedBy: editingId ? (cats.find(c => c.id === editingId).addedBy || volunteer.name) : volunteer.name
   };
 
+  try{
+    await db.collection('cats').doc(catData.id).set(catData);
+  }catch(e){
+    showToast("Échec de l'enregistrement — vérifiez votre connexion");
+    return;
+  }
+
   if(editingId){
     cats = cats.map(c => c.id === editingId ? catData : c);
   }else{
     cats.unshift(catData);
   }
-
-  const ok = await persistCats();
-  if(!ok) return;
 
   renderCatalog();
   showToast((editingId ? 'Modifications enregistrées pour ' : '') + name + (editingId ? '' : ' ajouté au catalogue'));
